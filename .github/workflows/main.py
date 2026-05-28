@@ -19,8 +19,8 @@ WATCHLIST = [
     "John Legend", "Ariana Grande", "Bruno Major", "Sabrina Carpenter"
 ]
 CITIES = ["Hong Kong", "Shanghai"]
-TIMEZONE_NAME = "Europe/Berlin"   # local time zone for send hour
-SEND_HOUR_LOCAL = 6               # send at 06:00 local
+TIMEZONE_NAME = "Europe/Berlin"
+SEND_HOUR_LOCAL = 6
 DATA_DIR = "data"
 DB_PATH = f"{DATA_DIR}/events.sqlite"
 JSON_PATH = f"{DATA_DIR}/events.json"
@@ -72,6 +72,7 @@ def event_hash(artists, date_iso, venue, city):
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 def create_db(conn):
+    cur = conn.cursor
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS events (
@@ -174,7 +175,6 @@ def parse_date(s, tzname):
     except Exception:
         return None
 
-# Fetchers
 def fetch_ticketflap():
     url = "https://www.ticketflap.com/events"
     out = []
@@ -186,19 +186,22 @@ def fetch_ticketflap():
         seen = set()
         for a in cards:
             href = a.get("href") or ""
+            if not href:
+                continue
             if not href.startswith("http"):
                 href = "https://www.ticketflap.com" + href
             title = (a.get_text(" ", strip=True) or "").strip()
             if not title or href in seen:
                 continue
             seen.add(href)
+            meta = a.get_text(" ", strip=True)
             date_text = ""
-            m = re.search(r"\b(\d{1,2}\s+\w+\s+\d{4})\b", a.get_text(" ", strip=True))
+            m = re.search(r"\b(\d{1,2}\s+\w+\s+\d{4})\b", meta)
             if m:
                 date_text = m.group(1)
             dt = parse_date(date_text, "Asia/Hong_Kong")
             date_local = dt.strftime("%Y-%m-%d %H:%M") if dt else ""
-            status = "on_sale" if re.search(r"\bbuy\b|\btickets?\b", a.get_text().lower()) else "announced"
+            status = "on_sale" if re.search(r"\bbuy\b|\btickets?\b", meta.lower()) else "announced"
             out.append({
                 "source": "ticketflap",
                 "url": href,
@@ -225,6 +228,8 @@ def fetch_damai():
         seen = set()
         for a in items:
             href = a.get("href") or ""
+            if not href:
+                continue
             if href.startswith("//"):
                 href = "https:" + href
             if href and not href.startswith("http"):
@@ -233,14 +238,15 @@ def fetch_damai():
             if not title or href in seen:
                 continue
             seen.add(href)
+            meta = a.get_text(" ", strip=True)
             date_text = ""
-            m = re.search(r"(20\d{2}[-./年]\s?\d{1,2}[-./月]\s?\d{1,2})", a.get_text())
+            m = re.search(r"(20\d{2}[-./年]\s?\d{1,2}[-./月]\s?\d{1,2})", meta)
             if m:
                 date_text = m.group(1)
             clean_date = date_text.replace("年", "-").replace("月", "-").replace("日", "")
             dt = parse_date(clean_date, "Asia/Shanghai")
             date_local = dt.strftime("%Y-%m-%d %H:%M") if dt else ""
-            status = "on_sale" if ("立即购买" in a.get_text() or "购票" in a.get_text()) else "announced"
+            status = "on_sale" if ("立即购买" in meta or "购票" in meta) else "announced"
             out.append({
                 "source": "damai",
                 "url": href,
@@ -267,19 +273,22 @@ def fetch_smartshanghai():
         seen = set()
         for a in items:
             href = a.get("href") or ""
+            if not href:
+                continue
             if not href.startswith("http"):
                 href = "https://www.smartshanghai.com" + href
             title = (a.get_text(" ", strip=True) or "").strip()
             if not title or href in seen:
                 continue
             seen.add(href)
+            meta = a.get_text(" ", strip=True)
             date_text = ""
-            m = re.search(r"\b(\d{1,2}\s+\w+\s+20\d{2})\b", a.get_text())
+            m = re.search(r"\b(\d{1,2}\s+\w+\s+20\d{2})\b", meta)
             if m:
                 date_text = m.group(1)
             dt = parse_date(date_text, "Asia/Shanghai")
             date_local = dt.strftime("%Y-%m-%d %H:%M") if dt else ""
-            status = "on_sale" if re.search(r"\btickets?\b|\bbuy\b", a.get_text().lower()) else "announced"
+            status = "on_sale" if re.search(r"\btickets?\b|\bbuy\b", meta.lower()) else "announced"
             out.append({
                 "source": "smartshanghai",
                 "url": href,
