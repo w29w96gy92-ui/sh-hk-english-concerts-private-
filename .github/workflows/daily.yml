@@ -9,6 +9,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: List repo
+        run: |
+          pwd
+          git branch --show-current || true
+          ls -la
+          find . -maxdepth 2 -type f -print
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -16,4 +24,4 @@ jobs:
       - name: Install deps
         run: pip install requests beautifulsoup4 python-dateutil pytz
       - name: Run agent
-        run: python main.py
+        run: python ./main.py
