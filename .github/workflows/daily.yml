@@ -9,30 +9,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: List repo
-        run: |
-          pwd
-          git branch --show-current || true
-          ls -la
-          find . -maxdepth 3 -type f -iname 'main.py' -print
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install deps
         run: pip install requests beautifulsoup4 python-dateutil pytz
-      - name: Find main.py
-        id: find_main
-        run: |
-          F=$(find . -maxdepth 3 -type f -iname 'main.py' | head -n1)
-          if [ -z "$F" ]; then echo "MAIN=" >> $GITHUB_OUTPUT; else echo "MAIN=$F" >> $GITHUB_OUTPUT; fi
-      - name: Run agent (if found)
-        if: ${{ steps.find_main.outputs.MAIN != '' }}
-        run: python "${{ steps.find_main.outputs.MAIN }}"
-      - name: Fail if main.py missing
-        if: ${{ steps.find_main.outputs.MAIN == '' }}
-        run: |
-          echo "main.py not found at repo root. Use GitHub UI to move it to the top level (rename path to main.py)."
-          echo "Files at repo root:"
-          ls -la
-          exit 1
+      - name: Run agent
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          FORCE_SEND_NOW: ${{ secrets.FORCE_SEND_NOW }}
+        run: python main.py
