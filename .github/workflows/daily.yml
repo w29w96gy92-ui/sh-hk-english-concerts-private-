@@ -15,6 +15,19 @@ jobs:
           python-version: '3.11'
       - name: Install deps
         run: pip install requests beautifulsoup4 python-dateutil pytz
+      - name: Find main.py
+        id: find_main
+        shell: bash
+        run: |
+          set -e
+          F="$(git ls-files | grep -E '(^|/)(main\.py)$' | head -n1 || true)"
+          if [ -z "$F" ]; then
+            echo "MAIN=" >> $GITHUB_OUTPUT
+            echo "main.py not found"; exit 1
+          else
+            echo "MAIN=$F" >> $GITHUB_OUTPUT
+            echo "Found: $F"
+          fi
       - name: Run agent
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -23,4 +36,4 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           TO_EMAIL: ${{ secrets.TO_EMAIL }}
           FORCE_SEND_NOW: ${{ secrets.FORCE_SEND_NOW }}
-        run: python main.py
+        run: python "${{ steps.find_main.outputs.MAIN }}"
