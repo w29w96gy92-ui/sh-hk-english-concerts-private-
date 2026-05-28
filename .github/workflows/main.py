@@ -64,8 +64,9 @@ def build_digest(new_events, updated_events, all_events): def fmt(ev): star = ""
 
 def send_email(subject, body): host = os.getenv("SMTP_HOST") port = int(os.getenv("SMTP_PORT", "587")) user = os.getenv("SMTP_USER") pw = os.getenv("SMTP_PASS") to_email = os.getenv("TO_EMAIL") if not (host and port and user and pw and to_email): print("Email not configured; skipping.") return msg = MIMEText(body, "plain", "utf-8") msg["Subject"] = subject msg["From"] = formataddr(("Concert Alerts", user)) msg["To"] = to_email try: srv = smtplib.SMTP(host, port, timeout=25) srv.ehlo() srv.starttls() srv.login(user, pw) srv.sendmail(user, [to_email], msg.as_string()) srv.quit() print("Email sent.") except Exception as e: print("Email send failed:", e)
 
-def send_pushplus(title, content): token = os.getenv("PUSHPLUS_TOKEN") if not token: print("PushPlus not configured; skipping.") return url = "https://www.pushplus.plus/send" payload = { "token": token, "title": title, "content": content.replace("\n", "
-"), "template": "html" } try: r = requests.post(url, json=payload, timeout=15) if r.status_code == 200: print("PushPlus sent.") else: print("PushPlus failed:", r.status_code, r.text[:200]) except Exception as e: print("PushPlus error:", e)
+def send_pushplus(title, content):
+  print("PushPlus temporarily disabled.")
+  return
 
 def write_json(all_events): ensure_dirs() with open(JSON_PATH, "w", encoding="utf-8") as f: json.dump(all_events, f, ensure_ascii=False, indent=2)
 
