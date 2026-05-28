@@ -55,9 +55,6 @@ for ev in results:
         continue
     title = ev.get("title", "")
     artists = ev.get("artists") or []
-    if artists == [title]:
-        # Optional: simple split heuristics can be added later
-        pass
     ev["artists"] = artists
     date_iso = ev.get("date_local") or ""
     ev["hash"] = event_hash(ev["artists"], date_iso, ev.get("venue", ""), ev["city"])
