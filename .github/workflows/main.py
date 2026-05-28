@@ -26,7 +26,7 @@ def get_existing_by_hash(conn, h): cur = conn.cursor() cur.execute( "SELECT id, 
 
 def upsert_event(conn, ev): h = ev["hash"] existing = get_existing_by_hash(conn, h) now_iso = datetime.now(timezone.utc).isoformat() cur = conn.cursor() if not existing: cur.execute(""" INSERT INTO events(hash,title,artists,venue,city,date_local,timezone,status,source,url,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) """, ( h, ev["title"], ", ".join(ev["artists"]), ev["venue"], ev["city"], ev["date_local"], ev["timezone"], ev["status"], ev["source"], ev["url"], now_iso, now_iso )) conn.commit() return "new" else: changed = False if ev["status"] and ev["status"] != existing["status"]: changed = True if ev["date_local"] != existing["date_local"] or ev["venue"] != existing["venue"]: changed = True if changed: cur.execute(""" UPDATE events SET title=?, artists=?, venue=?, city=?, date_local=?, timezone=?, status=?, source=?, url=?, last_seen_at=? WHERE hash=? """, ( ev["title"], ", ".join(ev["artists"]), ev["venue"], ev["city"], ev["date_local"], ev["timezone"], ev["status"], ev["source"], ev["url"], now_iso, h )) conn.commit() return "updated" else: cur.execute("UPDATE events SET last_seen_at=? WHERE hash=?", (now_iso, h)) conn.commit() return "seen"
 
-def classify_include(ev): for a in ev["artists"]: for w in WATCHLIST: if slugify(w) in slugify(a): return True, "watchlist" text = " ".join([ev.get("title", ""), " ".join(ev.get("artists", []))]) score = english_score(text) englishish = score >= 0.35 source_bonus = ev["source"] in ("ticketflap", "smartshanghai") include = englishish or source_bonus return include, "english" if englishish else ("source" if source_bonus else "other")
+def classify_include(ev): for a in ev["artists"]: for w in WATCHLIST: if slugify(w) in slugify(a): return True, "watchlist" text = " ".join([ev.get("title", ""), " ".join(ev.get("artists", []))]) score = english_score(text) englishish = score >= 0.35 source_bonus = ev["source"] in ("ticketflap", "smartshanghai") include = englishish or source_bonus reason = "english" if englishish else ("source" if source_bonus else "other") return include, reason
 
 def parse_date(s, tzname): if not s: return None try: dt = dtparser.parse(s) if not dt.tzinfo: dt = pytz.timezone(tzname).localize(dt) return dt except Exception: return None
 
@@ -39,4 +39,39 @@ def fetch_damai(): url = "https://search.damai.cn/search.html?keyword=&destCity=
 ------------- Source: SmartShanghai (Shanghai) -------------
 def fetch_smartshanghai(): url = "https://www.smartshanghai.com/event/concerts" out = [] try: r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=25) r.raise_for_status() soup = BeautifulSoup(r.text, "html.parser") items = soup.select("a[href*='/event/']") seen = set() for a in items: href = a.get("href") or "" if not href: continue if not href.startswith("http"): href = "https://www.smartshanghai.com" + href title = (a.get_text(" ", strip=True) or "").strip() if not title or href in seen: continue seen.add(href) card = a.find_parent(["div", "li", "article"]) or a meta = card.get_text(" ", strip=True) date_text = "" m = re.search(r"\b(\d{1,2}\s+\w+\s+20\d{2})\b", meta) if m: date_text = m.group(1) dt = parse_date(date_text, "Asia/Shanghai") date_local = dt.strftime("%Y-%m-%d %H:%M") if dt else "" status = "on_sale" if re.search(r"\btickets?\b|\bbuy\b", meta.lower()) else "announced" out.append({ "source": "smartshanghai", "url": href, "title": title, "artists": [title], "venue": "", "city": "Shanghai", "date_local": date_local, "timezone": "Asia/Shanghai", "status": status }) except Exception as e: print("[smartshanghai] error:", e) return out
 
-def gather_events(): results = [] if "ticketflap" in SOUR
+def gather_events(): results = [] if "ticketflap" in SOURCES: results.extend(fetch_ticketflap()) if "damai" in SOURCES: results.extend(fetch_damai()) if "smartshanghai" in SOURCES: results.extend(fetch_smartshanghai())
+
+
+
+
+
+kept = []
+for ev in results:
+    ev["city"] = normalize_city(ev.get("city"))
+    if ev["city"] not in CITIES:
+        continue
+    include, _reason = classify_include(ev)
+    if not include:
+        continue
+    title = ev.get("title", "")
+    artists = ev.get("artists") or []
+    if artists == [title]:
+        # Optional: simple split heuristics can be added later
+        pass
+    ev["artists"] = artists
+    date_iso = ev.get("date_local") or ""
+    ev["hash"] = event_hash(ev["artists"], date_iso, ev.get("venue", ""), ev["city"])
+    kept.append(ev)
+return kept
+def build_digest(new_events, updated_events, all_events): def fmt(ev): star = "" for a in ev["artists"]: for w in WATCHLIST: if slugify(w) in slugify(a): star = "★ " break date = ev["date_local"] or "TBA" return f"{star}{ev['title']} — {ev['city']} — {date}\n{ev['url']}" lines = [] if new_events or updated_events: lines.append("New / Updated since yesterday:") for ev in new_events: lines.append("NEW: " + fmt(ev)) for ev in updated_events: lines.append("UPDATE: " + fmt(ev)) lines.append("") lines.append("Upcoming:") def k(ev): return (ev["date_local"] or "9999-99-99", ev["city"], ev["title"]) for ev in sorted(all_events, key=k): lines.append(fmt(ev)) return "\n".join(lines)
+
+def send_email(subject, body): host = os.getenv("SMTP_HOST") port = int(os.getenv("SMTP_PORT", "587")) user = os.getenv("SMTP_USER") pw = os.getenv("SMTP_PASS") to_email = os.getenv("TO_EMAIL") if not (host and port and user and pw and to_email): print("Email not configured; skipping.") return msg = MIMEText(body, "plain", "utf-8") msg["Subject"] = subject msg["From"] = formataddr(("Concert Alerts", user)) msg["To"] = to_email try: srv = smtplib.SMTP(host, port, timeout=25) srv.ehlo() srv.starttls() srv.login(user, pw) srv.sendmail(user, [to_email], msg.as_string()) srv.quit() print("Email sent.") except Exception as e: print("Email send failed:", e)
+
+def send_pushplus(title, content): token = os.getenv("PUSHPLUS_TOKEN") if not token: print("PushPlus not configured; skipping.") return url = "https://www.pushplus.plus/send" payload = { "token": token, "title": title, "content": content.replace("\n", "
+"), "template": "html" } try: r = requests.post(url, json=payload, timeout=15) if r.status_code == 200: print("PushPlus sent.") else: print("PushPlus failed:", r.status_code, r.text[:200]) except Exception as e: print("PushPlus error:", e)
+
+def write_json(all_events): ensure_dirs() with open(JSON_PATH, "w", encoding="utf-8") as f: json.dump(all_events, f, ensure_ascii=False, indent=2)
+
+def main(): ensure_dirs() conn = open_db() fetched = gather_events() new_list, updated_list = [], [] for ev in fetched: result = upsert_event(conn, ev) if result == "new": new_list.append(ev) elif result == "updated": updated_list.append(ev) cur = conn.cursor() cur.execute("SELECT title, artists, venue, city, date_local, timezone, status, source, url, hash FROM events") all_events = [] for row in cur.fetchall(): all_events.append({ "title": row[0], "artists": [a.strip() for a in (row[1] or "").split(",") if a.strip()], "venue": row[2], "city": row[3], "date_local": row[4], "timezone": row[5], "status": row[6], "source": row[7], "url": row[8], "hash": row[9] }) write_json(all_events) if should_send_now(): subject = "Shanghai/HK English concerts — daily digest" body = build_digest(new_list, updated_list, all_events) send_email(subject, body) send_pushplus(subject, body) else: print("Not send hour; skipping notifications.") conn.close()
+
+if name == "main": main()
