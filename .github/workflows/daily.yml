@@ -1,1 +1,44 @@
-name: daily-concerts on: workflow_dispatch: schedule: - cron: '15 * * * *' permissions: contents: write concurrency: group: daily-concerts cancel-in-progress: false jobs: run: runs-on: ubuntu-latest steps: - name: Checkout uses: actions/checkout@v4 with: persist-credentials: true - name: Set up Python uses: actions/setup-python@v5 with: python-version: '3.11' - name: Install deps run: pip install -r requirements.txt - name: Run agent env: SMTP_HOST: ${{ secrets.SMTP_HOST }} SMTP_PORT: ${{ secrets.SMTP_PORT }} SMTP_USER: ${{ secrets.SMTP_USER }} SMTP_PASS: ${{ secrets.SMTP_PASS }} TO_EMAIL: ${{ secrets.TO_EMAIL }} PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }} FORCE_SEND_NOW: ${{ secrets.FORCE_SEND_NOW }} run: | python main.py - name: Commit data if changed run: | if [ -n "$(git status --porcelain)" ]; then git config user.name "concert-bot" git config user.email "concert-bot@users.noreply.github.com" git add -A git commit -m "Update data [skip ci]" git push fi
+name: daily-concerts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: daily-concerts
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      name: Install deps
+        run: pip install -r requirements.txt
+      - name: Run agent
+          env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          FORCE_SEND_NOW: ${{ secrets.FORCE_SEND_NOW }}
+        run: |
+          python main.py
+      - name: Commit data if changed
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "concert-bot"
+            git config user.email "concert-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "Update data [skip ci]"
+            git push
+          fi
