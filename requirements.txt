@@ -1,4 +1,1 @@
-requests
-beautifulsoup4
-lxml
-python-dateutil pytz
+requests beautifulsoup4 lxml python-dateutil pytz
